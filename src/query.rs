@@ -1,6 +1,8 @@
 //! Module for querying the nav-mesh.
 
-use bevy::prelude::{UVec2, Vec3};
+// use bevy::prelude::{UVec2, Vec3};
+
+use nalgebra::{Vector3, Vector2, Vector4};
 
 use crate::{
     tiles::{Link, NavMeshTiles},
@@ -19,10 +21,10 @@ enum NodeState {
 
 #[derive(Debug)]
 struct NavMeshNode {
-    position: Vec3,
+    position: Vector3<f32>,
     cost: f32,
     total_cost: f32,
-    tile: UVec2,
+    tile: Vector2<u32>,
     polygon: u16,
     state: NodeState,
     parent: Option<usize>,
@@ -51,11 +53,11 @@ pub enum FindPolygonPathError {
 pub fn find_polygon_path(
     nav_mesh: &NavMeshTiles,
     nav_mesh_settings: &NavMeshSettings,
-    start_pos: Vec3,
-    end_pos: Vec3,
+    start_pos: Vector3<f32>,
+    end_pos: Vector3<f32>,
     position_search_radius: Option<f32>,
     area_cost_multipliers: Option<&[f32]>, // TODO: A slice might not be the best choice when there are many area types.
-) -> Result<Vec<(UVec2, u16)>, FindPolygonPathError> {
+) -> Result<Vec<(Vector2<u32>, u16)>, FindPolygonPathError> {
     let search_radius = position_search_radius.unwrap_or(5.0);
 
     let Some((start_tile, start_poly, start_pos)) = nav_mesh.find_closest_polygon_in_box(nav_mesh_settings, start_pos, search_radius) else {
@@ -77,7 +79,7 @@ pub fn find_polygon_path(
         let start_node = NavMeshNode {
             position: start_pos,
             cost: 0.0,
-            total_cost: start_pos.distance(end_pos) * HEURISTIC_SCALE,
+            total_cost: start_pos.metric_distance(&end_pos) * HEURISTIC_SCALE,
             tile: start_tile,
             polygon: start_poly,
             state: NodeState::Open,
@@ -146,7 +148,7 @@ pub fn find_polygon_path(
                         let b = node_tile.vertices
                             [indices[(*edge + 1) as usize % indices.len()] as usize];
 
-                        a.lerp(b, 0.5)
+                        a.lerp(&b, 0.5)
                     }
                     Link::External {
                         edge,
@@ -163,10 +165,10 @@ pub fn find_polygon_path(
                         const S: f32 = 1.0 / 255.0;
                         let bound_min = *bound_min as f32 * S;
                         let bound_max = *bound_max as f32 * S;
-                        let clamped_a = a.lerp(b, bound_min);
-                        let clamped_b = a.lerp(b, bound_max);
+                        let clamped_a = a.lerp(&b, bound_min);
+                        let clamped_b = a.lerp(&b, bound_max);
 
-                        clamped_a.lerp(clamped_b, 0.5)
+                        clamped_a.lerp(&clamped_b, 0.5)
                     }
                 };
 
@@ -198,18 +200,18 @@ pub fn find_polygon_path(
                 let (cost, heuristic) = if end_tile == link_tile && end_poly == link_polygon {
                     // Special case for the final node.
                     let current_cost =
-                        best_position.distance(neighbour_node.position) * node_cost_multiplier;
-                    let end_cost = neighbour_node.position.distance(end_pos);
+                        best_position.metric_distance(&neighbour_node.position) * node_cost_multiplier;
+                    let end_cost = neighbour_node.position.metric_distance(&end_pos);
 
                     let cost = best_cost + current_cost + end_cost;
 
                     (cost, 0.0)
                 } else {
                     let current_cost =
-                        best_position.distance(neighbour_node.position) * node_cost_multiplier;
+                        best_position.metric_distance(&neighbour_node.position) * node_cost_multiplier;
 
                     let cost = best_cost + current_cost;
-                    let heuristic = neighbour_node.position.distance(end_pos) * HEURISTIC_SCALE;
+                    let heuristic = neighbour_node.position.metric_distance(&end_pos) * HEURISTIC_SCALE;
 
                     (cost, heuristic)
                 };
@@ -300,10 +302,10 @@ pub enum StringPullingError {
 /// Returns the path as `Vec<Vec3>` or [StringPullingError]
 pub fn perform_string_pulling_on_path(
     nav_mesh: &NavMeshTiles,
-    start_pos: Vec3,
-    end_pos: Vec3,
-    path: &[(UVec2, u16)],
-) -> Result<Vec<Vec3>, StringPullingError> {
+    start_pos: Vector3<f32>,
+    end_pos: Vector3<f32>,
+    path: &[(Vector2<u32>, u16)],
+) -> Result<Vec<Vector3<f32>>, StringPullingError> {
     if path.is_empty() {
         return Err(StringPullingError::PathEmpty);
     }
@@ -369,8 +371,8 @@ pub fn perform_string_pulling_on_path(
                             [indices[(*edge + 1) as usize % indices.len()] as usize];
 
                         const S: f32 = 1.0 / 255.0;
-                        let clamped_a = a.lerp(b, *bound_min as f32 * S);
-                        let clamped_b = a.lerp(b, *bound_max as f32 * S);
+                        let clamped_a = a.lerp(&b, *bound_min as f32 * S);
+                        let clamped_b = a.lerp(&b, *bound_max as f32 * S);
 
                         (clamped_a, clamped_b)
                     }
@@ -454,11 +456,11 @@ pub enum FindPathError {
 pub fn find_path(
     nav_mesh: &NavMeshTiles,
     nav_mesh_settings: &NavMeshSettings,
-    start_pos: Vec3,
-    end_pos: Vec3,
+    start_pos: Vector3<f32>,
+    end_pos: Vector3<f32>,
     position_search_radius: Option<f32>,
     area_cost_multipliers: Option<&[f32]>,
-) -> Result<Vec<Vec3>, FindPathError> {
+) -> Result<Vec<Vector3<f32>>, FindPathError> {
     match find_polygon_path(
         nav_mesh,
         nav_mesh_settings,
@@ -473,7 +475,7 @@ pub fn find_path(
     }
 }
 
-fn triangle_area_2d(a: Vec3, b: Vec3, c: Vec3) -> f32 {
+fn triangle_area_2d(a: Vector3<f32>, b: Vector3<f32>, c: Vector3<f32>) -> f32 {
     let ab_x = b.x - a.x;
     let ab_z = b.z - a.z;
 

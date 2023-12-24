@@ -1,4 +1,7 @@
-use bevy::prelude::{Transform, Vec3};
+// use bevy::prelude::{Transform, Vec3};
+
+use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3};
+
 use parry3d::{
     math::Real,
     na::Point3,
@@ -8,7 +11,7 @@ use parry3d::{
 use crate::{heightfields::TriangleCollection, Area};
 
 pub struct GeometryCollection {
-    pub transform: Transform,
+    pub transform: Transform3<f32>,
     pub geometry_to_convert: GeometryToConvert,
     pub area: Option<Area>,
 }
@@ -28,8 +31,8 @@ pub enum GeometryToConvert {
 }
 
 pub(super) enum Triangles {
-    Triangle([Vec3; 3]),
-    TriMesh(Vec<Vec3>, Vec<[u32; 3]>),
+    Triangle([Vector3<f32>; 3]),
+    TriMesh(Vec<Vector3<f32>>, Vec<[u32; 3]>),
 }
 
 const SUBDIVISIONS: u32 = 5;
@@ -60,14 +63,14 @@ pub(super) fn convert_geometry(geometry_to_convert: GeometryToConvert) -> Triang
                     return Triangles::Triangle(
                         triangle
                             .vertices()
-                            .map(|point| Vec3::new(point.x, point.y, point.z)),
+                            .map(|point| Vector3::<f32>::new(point.x, point.y, point.z)),
                     );
                 }
             };
 
             let vertices = vertices
                 .iter()
-                .map(|point| Vec3::new(point.x, point.y, point.z))
+                .map(|point| Vector3::<f32>::new(point.x, point.y, point.z))
                 .collect();
 
             Triangles::TriMesh(vertices, triangles)
@@ -75,7 +78,7 @@ pub(super) fn convert_geometry(geometry_to_convert: GeometryToConvert) -> Triang
         GeometryToConvert::ParryTriMesh(mut vertices, triangles) => {
             let vertices = vertices
                 .drain(..)
-                .map(|point| Vec3::new(point.x, point.y, point.z))
+                .map(|point| Vector3::<f32>::new(point.x, point.y, point.z))
                 .collect();
 
             Triangles::TriMesh(vertices, triangles)

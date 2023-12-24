@@ -1,4 +1,6 @@
-use bevy::{prelude::{UVec2, UVec3, UVec4}, log::info};
+// use bevy::{prelude::{Vector2<u32>, Vector3<u32>, Vector4<u32>}, log::info};
+
+use nalgebra::{Vector3, Vector2, Vector4};
 
 use crate::{contour::ContourSet, Area};
 
@@ -6,7 +8,7 @@ use super::{intersect, intersect_prop, left, left_on, NavMeshSettings};
 
 #[derive(Default)]
 pub struct PolyMesh {
-    pub vertices: Vec<UVec3>,
+    pub vertices: Vec<Vector3<u32>>,
     pub polygons: Vec<[u32; VERTICES_IN_TRIANGLE]>, //
     pub edges: Vec<[EdgeConnection; VERTICES_IN_TRIANGLE]>, // For each polygon edge points to a polygon (if any) that shares the edge.
     pub areas: Vec<Area>,
@@ -54,7 +56,7 @@ pub fn build_poly_mesh(contour_set: ContourSet, nav_mesh_settings: &NavMeshSetti
         indices.extend(0..contour.vertices.len() as u32);
 
         if !triangulate(&contour.vertices, &mut indices, &mut triangles) {
-            info!("Triangulation failed for contour.");
+            println!("Triangulation failed for contour.");
         }
 
         for vertex in contour.vertices.iter() {
@@ -131,12 +133,12 @@ pub enum EdgeConnectionDirection {
     ZNegative,
 }
 impl EdgeConnectionDirection {
-    pub fn offset(&self, coordinate: UVec2) -> UVec2 {
+    pub fn offset(&self, coordinate: Vector2<u32>) -> Vector2<u32> {
         match self {
-            EdgeConnectionDirection::XNegative => coordinate - UVec2::X,
-            EdgeConnectionDirection::ZPositive => coordinate + UVec2::Y,
-            EdgeConnectionDirection::XPositive => coordinate + UVec2::X,
-            EdgeConnectionDirection::ZNegative => coordinate - UVec2::Y,
+            EdgeConnectionDirection::XNegative => coordinate - Vector2::<u32>::X,
+            EdgeConnectionDirection::ZPositive => coordinate + Vector2::<u32>::Y,
+            EdgeConnectionDirection::XPositive => coordinate + Vector2::<u32>::X,
+            EdgeConnectionDirection::ZNegative => coordinate - Vector2::<u32>::Y,
         }
     }
 }
@@ -229,8 +231,8 @@ fn compute_vertex_hash(x: u64, z: u64) -> u64 {
 }
 
 fn add_vertex(
-    vertex: UVec3,
-    vertices: &mut Vec<UVec3>,
+    vertex: Vector3<u32>,
+    vertices: &mut Vec<Vector3<u32>>,
     first_vertex: &mut [i32],
     next_vertex: &mut [i32],
 ) -> u32 {
@@ -252,7 +254,7 @@ fn add_vertex(
     i as u32
 }
 
-fn triangulate(vertices: &[UVec4], indices: &mut Vec<u32>, triangles: &mut Vec<u32>) -> bool {
+fn triangulate(vertices: &[Vector4<u32>], indices: &mut Vec<u32>, triangles: &mut Vec<u32>) -> bool {
     for i in 0..vertices.len() {
         let next = (i + 1) % vertices.len();
         let next_next = (next + 1) % vertices.len();
@@ -354,12 +356,12 @@ fn triangulate(vertices: &[UVec4], indices: &mut Vec<u32>, triangles: &mut Vec<u
     true
 }
 
-/// Equal comparison treating the UVec4 as a UVec2 only considering X & Z.
-fn vec_equal(a: UVec4, b: UVec4) -> bool {
+/// Equal comparison treating the Vector4<u32> as a Vector2<u32> only considering X & Z.
+fn vec_equal(a: Vector4<u32>, b: Vector4<u32>) -> bool {
     a.x == b.x && a.z == b.z
 }
 
-fn in_cone(i: usize, j: usize, vertices: &[UVec4], indices: &[u32]) -> bool {
+fn in_cone(i: usize, j: usize, vertices: &[Vector4<u32>], indices: &[u32]) -> bool {
     let point_i = vertices[(indices[i] & 0x0fffffff) as usize];
     let point_j = vertices[(indices[j] & 0x0fffffff) as usize];
 
@@ -394,7 +396,7 @@ fn in_cone(i: usize, j: usize, vertices: &[UVec4], indices: &[u32]) -> bool {
     ))
 }
 
-fn diagonalie(i: usize, j: usize, vertices: &[UVec4], indices: &[u32]) -> bool {
+fn diagonalie(i: usize, j: usize, vertices: &[Vector4<u32>], indices: &[u32]) -> bool {
     let diagonal_one = vertices[(indices[i] & 0x0fffffff) as usize];
     let diagonal_two = vertices[(indices[j] & 0x0fffffff) as usize];
 
@@ -427,11 +429,11 @@ fn diagonalie(i: usize, j: usize, vertices: &[UVec4], indices: &[u32]) -> bool {
     true
 }
 
-fn diagonal(i: usize, j: usize, vertices: &[UVec4], indices: &[u32]) -> bool {
+fn diagonal(i: usize, j: usize, vertices: &[Vector4<u32>], indices: &[u32]) -> bool {
     in_cone(i, j, vertices, indices) && diagonalie(i, j, vertices, indices)
 }
 
-fn in_cone_loose(a: usize, b: usize, vertices: &[UVec4], indices: &[u32]) -> bool {
+fn in_cone_loose(a: usize, b: usize, vertices: &[Vector4<u32>], indices: &[u32]) -> bool {
     let point_a = vertices[(indices[a] & 0x0fffffff) as usize];
     let point_b = vertices[(indices[b] & 0x0fffffff) as usize];
     let point_a_next = vertices[(indices[(a + 1) % indices.len()] & 0x0fffffff) as usize];
@@ -466,7 +468,7 @@ fn in_cone_loose(a: usize, b: usize, vertices: &[UVec4], indices: &[u32]) -> boo
     ))
 }
 
-fn diagonalie_loose(a: usize, b: usize, vertices: &[UVec4], indices: &[u32]) -> bool {
+fn diagonalie_loose(a: usize, b: usize, vertices: &[Vector4<u32>], indices: &[u32]) -> bool {
     let diagonal_a = vertices[(indices[a] & 0x0fffffff) as usize];
     let diagonal_b = vertices[(indices[b] & 0x0fffffff) as usize];
 
@@ -500,6 +502,6 @@ fn diagonalie_loose(a: usize, b: usize, vertices: &[UVec4], indices: &[u32]) -> 
     true
 }
 
-fn diagonal_loose(i: usize, j: usize, vertices: &[UVec4], indices: &[u32]) -> bool {
+fn diagonal_loose(i: usize, j: usize, vertices: &[Vector4<u32>], indices: &[u32]) -> bool {
     in_cone_loose(i, j, vertices, indices) && diagonalie_loose(i, j, vertices, indices)
 }

@@ -1,8 +1,12 @@
-use bevy::{
-    math::Vec3Swizzles,
-    prelude::{UVec2, Vec2, Vec3},
-    utils::HashMap,
-};
+// use bevy::{
+//     math::Vector3<f32>Swizzles,
+//     prelude::{Vector2<u32>, Vec2, Vector3<f32>},
+//     utils::HashMap,
+// };
+
+use nalgebra::{Vector3, Vector2, Vector4};
+
+use parry3d::utils::hashmap::HashMap;
 use smallvec::SmallVec;
 
 use crate::{
@@ -51,17 +55,17 @@ pub struct Polygon {
 #[derive(Debug)]
 pub struct NavMeshTile {
     /// Vertices in world space.
-    pub vertices: Vec<Vec3>,
+    pub vertices: Vec<Vector3<f32>>,
     pub polygons: Vec<Polygon>,
     pub edges: Vec<[EdgeConnection; VERTICES_IN_TRIANGLE]>,
 }
 impl NavMeshTile {
     /// Returns the closest point on ``polygon`` to ``position``.
-    pub fn get_closest_point_in_polygon(&self, polygon: &Polygon, position: Vec3) -> Vec3 {
+    pub fn get_closest_point_in_polygon(&self, polygon: &Polygon, position: Vector3<f32>) -> Vector3<f32> {
         let vertices = polygon.indices.map(|index| self.vertices[index as usize]);
 
         if let Some(height) = get_height_in_triangle(&vertices, position) {
-            return Vec3::new(position.x, height, position.z);
+            return Vector3::<f32>::new(position.x, height, position.z);
         }
 
         closest_point_on_edges(&vertices, position)
@@ -73,19 +77,19 @@ impl NavMeshTile {
 /// Call [crate::query::find_path] to run pathfinding algorithm.
 #[derive(Default)]
 pub struct NavMeshTiles {
-    pub tiles: HashMap<UVec2, NavMeshTile>,
-    pub tile_generations: HashMap<UVec2, u64>,
+    pub tiles: HashMap<Vector2<u32>, NavMeshTile>,
+    pub tile_generations: HashMap<Vector2<u32>, u64>,
 }
 
 impl NavMeshTiles {
     /// Returns a [HashMap] containing all tiles in the nav-mesh.
-    pub fn get_tiles(&self) -> &HashMap<UVec2, NavMeshTile> {
+    pub fn get_tiles(&self) -> &HashMap<Vector2<u32>, NavMeshTile> {
         &self.tiles
     }
 
     pub(super) fn add_tile(
         &mut self,
-        tile_coord: UVec2,
+        tile_coord: Vector2<u32>,
         mut tile: NavMeshTile,
         nav_mesh_settings: &NavMeshSettings,
     ) {
@@ -95,7 +99,7 @@ impl NavMeshTiles {
         let step_height = nav_mesh_settings.step_height as f32 * nav_mesh_settings.cell_height;
         // X-Negative
         if tile_coord.x > 0 {
-            let neighbour_coord = UVec2::new(tile_coord.x - 1, tile_coord.y);
+            let neighbour_coord = Vector2::<u32>::new(tile_coord.x - 1, tile_coord.y);
 
             if let Some(neighbour) = self.tiles.get_mut(&neighbour_coord) {
                 let direction = EdgeConnectionDirection::XNegative;
@@ -122,7 +126,7 @@ impl NavMeshTiles {
 
         // X-Positive
         if tile_coord.x < u32::MAX {
-            let neighbour_coord = UVec2::new(tile_coord.x + 1, tile_coord.y);
+            let neighbour_coord = Vector2::<u32>::new(tile_coord.x + 1, tile_coord.y);
 
             if let Some(neighbour) = self.tiles.get_mut(&neighbour_coord) {
                 let direction = EdgeConnectionDirection::XPositive;
@@ -149,7 +153,7 @@ impl NavMeshTiles {
 
         // Z-Negative
         if tile_coord.y > 0 {
-            let neighbour_coord = UVec2::new(tile_coord.x, tile_coord.y - 1);
+            let neighbour_coord = Vector2::<u32>::new(tile_coord.x, tile_coord.y - 1);
 
             if let Some(neighbour) = self.tiles.get_mut(&neighbour_coord) {
                 let direction = EdgeConnectionDirection::ZNegative;
@@ -176,7 +180,7 @@ impl NavMeshTiles {
 
         // Z-Positive
         if tile_coord.y < u32::MAX {
-            let neighbour_coord = UVec2::new(tile_coord.x, tile_coord.y + 1);
+            let neighbour_coord = Vector2::<u32>::new(tile_coord.x, tile_coord.y + 1);
 
             if let Some(neighbour) = self.tiles.get_mut(&neighbour_coord) {
                 let direction = EdgeConnectionDirection::ZPositive;
@@ -205,7 +209,7 @@ impl NavMeshTiles {
         self.tiles.insert(tile_coord, tile);
     }
 
-    pub(super) fn remove_tile(&mut self, tile_coord: UVec2) {
+    pub(super) fn remove_tile(&mut self, tile_coord: Vector2<u32>) {
         if tile_coord.x > 0 {
             let direction = EdgeConnectionDirection::XNegative;
             let neighbour_coord = direction.offset(tile_coord);
@@ -249,9 +253,9 @@ impl NavMeshTiles {
     pub fn find_closest_polygon_in_box(
         &self,
         nav_mesh_settings: &NavMeshSettings,
-        center: Vec3,
+        center: Vector3<f32>,
         half_extents: f32,
-    ) -> Option<(UVec2, u16, Vec3)> {
+    ) -> Option<(Vector2<u32>, u16, Vector3<f32>)> {
         let min = center - half_extents;
         let max = center + half_extents;
 
@@ -262,7 +266,7 @@ impl NavMeshTiles {
         let mut out_distance = f32::INFINITY;
         for x in min_tile.x..=max_tile.x {
             for y in min_tile.y..=max_tile.y {
-                let tile_coords = UVec2::new(x, y);
+                let tile_coords = Vector2::<u32>::new(x, y);
                 if let Some(tile) = self.tiles.get(&tile_coords) {
                     for (poly_i, polygon) in tile.polygons.iter().enumerate() {
                         let closest_point = tile.get_closest_point_in_polygon(polygon, center);
@@ -281,7 +285,7 @@ impl NavMeshTiles {
     }
 }
 
-fn get_height_in_triangle(vertices: &[Vec3; VERTICES_IN_TRIANGLE], position: Vec3) -> Option<f32> {
+fn get_height_in_triangle(vertices: &[Vector3<f32>; VERTICES_IN_TRIANGLE], position: Vector3<f32>) -> Option<f32> {
     if !in_polygon(vertices, position) {
         return None;
     }
@@ -298,7 +302,7 @@ fn get_height_in_triangle(vertices: &[Vec3; VERTICES_IN_TRIANGLE], position: Vec
     Some(closest.y)
 }
 
-fn closest_height_in_triangle(a: Vec3, b: Vec3, c: Vec3, position: Vec3) -> Option<f32> {
+fn closest_height_in_triangle(a: Vector3<f32>, b: Vector3<f32>, c: Vector3<f32>, position: Vector3<f32>) -> Option<f32> {
     let v0 = c - a;
     let v1 = b - a;
     let v2 = position - a;
@@ -325,12 +329,12 @@ fn closest_height_in_triangle(a: Vec3, b: Vec3, c: Vec3, position: Vec3) -> Opti
     None
 }
 
-fn closest_point_on_edges(vertices: &[Vec3; VERTICES_IN_TRIANGLE], position: Vec3) -> Vec3 {
+fn closest_point_on_edges(vertices: &[Vector3<f32>; VERTICES_IN_TRIANGLE], position: Vector3<f32>) -> Vector3<f32> {
     let mut d_min = f32::INFINITY;
     let mut t_min = 0.0;
 
-    let mut edge_min = Vec3::ZERO;
-    let mut edge_max = Vec3::ZERO;
+    let mut edge_min = Vector3::<f32>::new(0.0,0.0,0.0);
+    let mut edge_max = Vector3::<f32>::new(0.0,0.0,0.0);
 
     for i in 0..vertices.len() {
         let prev = (vertices.len() + i - 1) % vertices.len();
@@ -344,10 +348,10 @@ fn closest_point_on_edges(vertices: &[Vec3; VERTICES_IN_TRIANGLE], position: Vec
         }
     }
 
-    edge_min.lerp(edge_max, t_min)
+    edge_min.lerp(&edge_max, t_min)
 }
 
-fn distance_point_to_segment_2d(point: Vec3, seg_a: Vec3, seg_b: Vec3) -> (f32, f32) {
+fn distance_point_to_segment_2d(point: Vector3<f32>, seg_a: Vector3<f32>, seg_b: Vector3<f32>) -> (f32, f32) {
     let ba_x = seg_b.x - seg_a.x;
     let ba_z = seg_b.z - seg_a.z;
 
@@ -367,7 +371,7 @@ fn distance_point_to_segment_2d(point: Vec3, seg_a: Vec3, seg_b: Vec3) -> (f32, 
     (dx * dx + dz * dz, t)
 }
 
-fn in_polygon(vertices: &[Vec3; VERTICES_IN_TRIANGLE], position: Vec3) -> bool {
+fn in_polygon(vertices: &[Vector3<f32>; VERTICES_IN_TRIANGLE], position: Vector3<f32>) -> bool {
     let mut inside = false;
 
     for i in 0..vertices.len() {
@@ -472,10 +476,10 @@ fn connect_external_links(
 }
 
 fn calculate_slab_end_points(
-    vertex_a: &Vec3,
-    vertex_b: &Vec3,
+    vertex_a: &Vector3<f32>,
+    vertex_b: &Vector3<f32>,
     side: EdgeConnectionDirection,
-) -> (Vec2, Vec2) {
+) -> (Vector2<f32>, Vector2<f32>) {
     if side == EdgeConnectionDirection::XNegative || side == EdgeConnectionDirection::XPositive {
         if vertex_a.z < vertex_b.z {
             let min = vertex_a.zy();
@@ -501,7 +505,7 @@ fn calculate_slab_end_points(
     }
 }
 
-fn get_slab_position(vertex: &Vec3, side: EdgeConnectionDirection) -> f32 {
+fn get_slab_position(vertex: &Vector3<f32>, side: EdgeConnectionDirection) -> f32 {
     match side {
         EdgeConnectionDirection::XNegative => vertex.x,
         EdgeConnectionDirection::ZPositive => vertex.z,
@@ -511,10 +515,10 @@ fn get_slab_position(vertex: &Vec3, side: EdgeConnectionDirection) -> f32 {
 }
 
 fn check_slabs_overlap(
-    a_min: Vec2,
-    a_max: Vec2,
-    b_min: Vec2,
-    b_max: Vec2,
+    a_min: Vector2<f32>,
+    a_max: Vector2<f32>,
+    b_min: Vector2<f32>,
+    b_max: Vector2<f32>,
     edge_shrink: f32,
     allowed_step: f32,
 ) -> bool {
@@ -551,18 +555,18 @@ fn check_slabs_overlap(
 const MAX_CONNECTING_POLYGONS: usize = 8;
 
 fn find_connecting_polygons_in_tile(
-    vertex_a: &Vec3,
-    vertex_b: &Vec3,
+    vertex_a: &Vector3<f32>,
+    vertex_b: &Vector3<f32>,
     tile: &NavMeshTile,
     side: EdgeConnectionDirection,
     step_height: f32,
 ) -> (
     usize,
     [u16; MAX_CONNECTING_POLYGONS],
-    [Vec2; MAX_CONNECTING_POLYGONS],
+    [Vector2<f32>; MAX_CONNECTING_POLYGONS],
 ) {
     let mut connecting_polys = [0; MAX_CONNECTING_POLYGONS];
-    let mut connection_area = [Vec2::ZERO; MAX_CONNECTING_POLYGONS];
+    let mut connection_area = [Vector2::<f32>::new(0.0,0.0); MAX_CONNECTING_POLYGONS];
     let mut count = 0;
 
     let (in_min, in_max) = calculate_slab_end_points(vertex_a, vertex_b, side);
@@ -595,7 +599,7 @@ fn find_connecting_polygons_in_tile(
             if count < connecting_polys.len() {
                 connecting_polys[count] = poly_index as u16;
                 connection_area[count] =
-                    Vec2::new(in_min.x.max(edge_min.x), in_max.x.min(edge_max.x));
+                Vector2::<f32>::new(in_min.x.max(edge_min.x), in_max.x.min(edge_max.x));
                 count += 1;
             }
             break;
@@ -607,7 +611,7 @@ fn find_connecting_polygons_in_tile(
 
 pub(super) fn create_nav_mesh_tile_from_poly_mesh(
     poly_mesh: PolyMesh,
-    tile_coord: UVec2,
+    tile_coord: Vector2<u32>,
     nav_mesh_settings: &NavMeshSettings,
 ) -> NavMeshTile {
     // Slight worry that the compiler won't optimize this but damn, it's cool.
@@ -646,7 +650,7 @@ pub(super) fn create_nav_mesh_tile_from_poly_mesh(
         .vertices
         .iter()
         .map(|vertex| {
-            Vec3::new(
+            Vector3::<f32>::new(
                 tile_origin.x + vertex.x as f32 * nav_mesh_settings.cell_width,
                 nav_mesh_settings.world_bottom_bound
                     + vertex.y as f32 * nav_mesh_settings.cell_height,

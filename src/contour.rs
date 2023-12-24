@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
-use bevy::{prelude::{IVec2, UVec2, UVec4}, log::warn};
+// use bevy::{prelude::{IVec2, UVec2, UVec4}, log::warn};
+use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3};
 
 use crate::{
     get_neighbour_index,
@@ -11,7 +12,7 @@ use super::{in_cone, intersect, NavMeshSettings, FLAG_BORDER_VERTEX, MASK_CONTOU
 
 #[derive(Default, Clone, Debug)]
 pub struct Contour {
-    pub vertices: Vec<UVec4>,
+    pub vertices: Vec<Vector4<u32>>,
     pub region: u16,
     /// Unlike [OpenSpan] this can't be ``None`` as ``None`` spans are ignored when generating contours.  
     pub area: Area,
@@ -267,7 +268,7 @@ fn merge_region_holes(region: &mut ContourRegion) {
         }
 
         let Some(index) = index else {
-            warn!("Failed to find merge points.");
+            println!("Failed to find merge points.");
             continue;
         };
 
@@ -297,7 +298,7 @@ fn merge_contours(
     target_contour.vertices = vertices;
 }
 
-fn calc_area_of_polygon_2d(vertices: &[UVec4]) -> i32 {
+fn calc_area_of_polygon_2d(vertices: &[Vector4<u32>]) -> i32 {
     let mut area = 0;
     for i in 0..vertices.len() {
         let previous = vertices[i].as_ivec4();
@@ -310,10 +311,10 @@ fn calc_area_of_polygon_2d(vertices: &[UVec4]) -> i32 {
 }
 
 fn intersect_segment_contour(
-    point: UVec4,
-    corner: UVec4,
+    point: Vector4<u32>,
+    corner: Vector4<u32>,
     diagonal_vertex: usize,
-    outline_vertices: &[UVec4],
+    outline_vertices: &[Vector4<u32>],
 ) -> bool {
     for i in 0..outline_vertices.len() {
         let next = (i + 1) % outline_vertices.len();
@@ -346,9 +347,9 @@ fn intersect_segment_contour(
 }
 
 fn intersect_segment_contour_no_vertex(
-    point: UVec4,
-    corner: UVec4,
-    outline_vertices: &[UVec4],
+    point: Vector4<u32>,
+    corner: Vector4<u32>,
+    outline_vertices: &[Vector4<u32>],
 ) -> bool {
     for i in 0..outline_vertices.len() {
         let next = (i + 1) % outline_vertices.len();
@@ -497,7 +498,7 @@ fn get_corner_height(
 
 fn simplify_contour(
     points: &[u32],
-    simplified: &mut Vec<UVec4>,
+    simplified: &mut Vec<Vector4<u32>>,
     max_error: f32,
     max_edge_len: u32,
 ) {
@@ -525,12 +526,12 @@ fn simplify_contour(
             let regions_differ = (points[i_pre_mul + 3] & MASK_CONTOUR_REGION)
                 != (points[next + 3] & MASK_CONTOUR_REGION);
             if regions_differ {
-                simplified.push(UVec4 {
-                    x: points[i_pre_mul],
-                    y: points[i_pre_mul + 1],
-                    z: points[i_pre_mul + 2],
-                    w: i as u32,
-                });
+                simplified.push(Vector4::<u32>::new(
+                    points[i_pre_mul],
+                    points[i_pre_mul + 1],
+                    points[i_pre_mul + 2],
+                    i as u32,
+                ));
             }
         }
     } else {
@@ -564,19 +565,19 @@ fn simplify_contour(
             }
         }
 
-        simplified.push(UVec4 {
-            x: lower_left_x,
-            y: lower_left_y,
-            z: lower_left_z,
-            w: lower_left_i,
-        });
+        simplified.push(Vector4::<u32>::new(
+             lower_left_x,
+             lower_left_y,
+             lower_left_z,
+             lower_left_i,
+        ));
 
-        simplified.push(UVec4 {
-            x: upper_right_x,
-            y: upper_right_y,
-            z: upper_right_z,
-            w: upper_right_i,
-        });
+        simplified.push(Vector4::<u32>::new(
+            upper_right_x,
+            upper_right_y,
+            upper_right_z,
+            upper_right_i,
+        ));
     }
 
     let point_count = points.len() / 4;
@@ -609,10 +610,10 @@ fn simplify_contour(
             // Checking if region is 0. We only tesellate unconnected edges.
             while c_i != end_i {
                 let deviation = point_distance_from_segment(
-                    UVec2::new(points[(c_i * 4) as usize], points[(c_i * 4 + 2) as usize])
+                    Vector2::<u32>::new(points[(c_i * 4) as usize], points[(c_i * 4 + 2) as usize])
                         .as_ivec2(),
-                    UVec2::new(a.x, a.z).as_ivec2(),
-                    UVec2::new(b.x, b.z).as_ivec2(),
+                        Vector2::<u32>::new(a.x, a.z).as_ivec2(),
+                        Vector2::<u32>::new(b.x, b.z).as_ivec2(),
                 );
                 if deviation > max_deviation {
                     max_deviation = deviation;
@@ -626,13 +627,12 @@ fn simplify_contour(
             (Some(max_i), true) => {
                 simplified.insert(
                     i + 1,
-                    UVec4 {
-                        x: points[(max_i * 4) as usize],
-                        y: points[(max_i * 4 + 1) as usize],
-                        z: points[(max_i * 4 + 2) as usize],
-                        w: max_i,
-                    },
-                );
+                    Vector4::<u32>::new(
+                        points[(max_i * 4) as usize],
+                        points[(max_i * 4 + 1) as usize],
+                        points[(max_i * 4 + 2) as usize],
+                        max_i,
+                    ));
             }
             _ => {
                 i += 1;
@@ -676,7 +676,7 @@ fn simplify_contour(
             if let Some(max_i) = max_i {
                 simplified.insert(
                     i + 1,
-                    UVec4::new(
+                    Vector4::<u32>::new(
                         points[max_i * 4],
                         points[max_i * 4 + 1],
                         points[max_i * 4 + 2],
@@ -697,7 +697,7 @@ fn simplify_contour(
     }
 }
 
-fn point_distance_from_segment(point: IVec2, seg_a: IVec2, seg_b: IVec2) -> f32 {
+fn point_distance_from_segment(point: Vector2<i32>, seg_a: Vector2<i32>, seg_b: Vector2<i32>) -> f32 {
     let segment_delta = (seg_b - seg_a).as_vec2();
     let point_delta = (point - seg_a).as_vec2();
 
@@ -714,7 +714,7 @@ fn point_distance_from_segment(point: IVec2, seg_a: IVec2, seg_b: IVec2) -> f32 
     delta_x * delta_x + delta_y * delta_y
 }
 
-fn remove_degenerate_segments(simplified: &mut Vec<UVec4>) {
+fn remove_degenerate_segments(simplified: &mut Vec<Vector4<u32>>) {
     // Remove adjacent vertices which are equal on xz-plane,
     let mut i = 0;
     while i < simplified.len() {

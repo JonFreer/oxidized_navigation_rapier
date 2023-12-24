@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, ops::Div, sync::Arc};
 
-use bevy::{prelude::*, math::Vec3A};
+// use bevy::{prelude::*, math::Vec3A};
+use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3};
 use parry3d::shape::HeightField;
 use smallvec::SmallVec;
 
@@ -53,19 +54,19 @@ pub struct OpenTile {
 }
 
 pub(super) struct TriangleCollection {
-    pub(super) transform: Transform,
+    pub(super) transform: Transform3<f32>,
     pub(super) triangles: Triangles,
     pub(super) area: Option<Area>,
 }
 
 pub struct HeightFieldCollection {
-    pub transform: Transform,
+    pub transform: Transform3<f32>,
     pub heightfield: Arc<HeightField>,
     pub area: Option<Area>,
 }
 
 pub(super) fn build_heightfield_tile(
-    tile_coord: UVec2,
+    tile_coord: Vector2<u32>,
     triangle_collections: Vec<TriangleCollection>,
     heightfields: Vec<HeightFieldCollection>,
     nav_mesh_settings: &NavMeshSettings,
@@ -75,10 +76,10 @@ pub(super) fn build_heightfield_tile(
         cells: vec![VoxelCell::default(); tile_side.pow(2)],
     };
 
-    let tile_max_bound = IVec3::new((tile_side - 1) as i32, 0, (tile_side - 1) as i32);
+    let tile_max_bound = Vector3::<i32>::new((tile_side - 1) as i32, 0, (tile_side - 1) as i32);
 
     let tile_origin = nav_mesh_settings.get_tile_origin_with_border(tile_coord);
-    let tile_origin = Vec3::new(
+    let tile_origin = Vector3::<f32>::new(
         tile_origin.x,
         nav_mesh_settings.world_bottom_bound,
         tile_origin.y,
@@ -88,7 +89,7 @@ pub(super) fn build_heightfield_tile(
 
     for collection in triangle_collections.iter() {
         // TODO: This might be wrong for xpbd or custom parry3d colliders, but I can't figure out a nice way to know whether or not we're actually dealing with a rapier3d collider.
-        let transform = collection.transform.with_scale(Vec3::ONE); // The collider returned from rapier already has scale applied to it, so we reset it here.
+        let transform = collection.transform.with_scale(Vector3::<f32>::ONE); // The collider returned from rapier already has scale applied to it, so we reset it here.
 
         match &collection.triangles {
             Triangles::Triangle(vertices) => {
@@ -96,9 +97,9 @@ pub(super) fn build_heightfield_tile(
                     vertices.map(|vertex| transform.transform_point(vertex) - tile_origin);
 
                 process_triangle(
-                    Vec3A::from(translated_vertices[0]),
-                    Vec3A::from(translated_vertices[1]),
-                    Vec3A::from(translated_vertices[2]),
+                    Vector3::<f32>::from(translated_vertices[0]),
+                    Vector3::<f32>::from(translated_vertices[1]),
+                    Vector3::<f32>::from(translated_vertices[2]),
                     nav_mesh_settings,
                     tile_max_bound,
                     tile_side,
@@ -115,9 +116,9 @@ pub(super) fn build_heightfield_tile(
                 ); // Transform vertices.
 
                 for triangle in triangles.iter() {
-                    let a = Vec3A::from(translated_vertices[triangle[0] as usize]);
-                    let b = Vec3A::from(translated_vertices[triangle[1] as usize]);
-                    let c = Vec3A::from(translated_vertices[triangle[2] as usize]);
+                    let a = Vector3::<f32>::from(translated_vertices[triangle[0] as usize]);
+                    let b = Vector3::<f32>::from(translated_vertices[triangle[1] as usize]);
+                    let c = Vector3::<f32>::from(translated_vertices[triangle[2] as usize]);
 
                     process_triangle(
                         a,
@@ -136,14 +137,14 @@ pub(super) fn build_heightfield_tile(
 
     for collection in heightfields.iter() {
         // TODO: This might be wrong for xpbd or custom parry3d colliders, but I can't figure out a nice way to know whether or not we're actually dealing with a rapier3d collider.
-        let transform = collection.transform.with_scale(Vec3::ONE); // The collider returned from rapier already has scale applied to it, so we reset it here.
+        let transform = collection.transform.with_scale(Vector3::<f32>::ONE); // The collider returned from rapier already has scale applied to it, so we reset it here.
 
         for triangle in collection.heightfield.triangles() {
-            let a = Vec3A::from(transform.transform_point(Vec3::new(triangle.a.x, triangle.a.y, triangle.a.z))
+            let a = Vector3::<f32>::from(transform.transform_point(Vector3::<f32>::new(triangle.a.x, triangle.a.y, triangle.a.z))
                 - tile_origin);
-            let b = Vec3A::from(transform.transform_point(Vec3::new(triangle.b.x, triangle.b.y, triangle.b.z))
+            let b = Vector3::<f32>::from(transform.transform_point(Vector3::<f32>::new(triangle.b.x, triangle.b.y, triangle.b.z))
                 - tile_origin);
-            let c = Vec3A::from(transform.transform_point(Vec3::new(triangle.c.x, triangle.c.y, triangle.c.z))
+            let c = Vector3::<f32>::from(transform.transform_point(Vector3::<f32>::new(triangle.c.x, triangle.c.y, triangle.c.z))
                 - tile_origin);
 
             process_triangle(
@@ -163,11 +164,11 @@ pub(super) fn build_heightfield_tile(
 }
 
 fn process_triangle(
-    a: Vec3A,
-    b: Vec3A,
-    c: Vec3A,
+    a: Vector3<f32>,
+    b: Vector3<f32>,
+    c: Vector3<f32>,
     nav_mesh_settings: &NavMeshSettings,
-    tile_max_bound: IVec3,
+    tile_max_bound: Vector3::<f32>,
     tile_side: usize,
     voxel_cells: &mut [VoxelCell],
     area: Option<Area>,
@@ -184,7 +185,7 @@ fn process_triangle(
         return;
     }
 
-    let clamped_bound_min = min_bound.max(IVec3::ZERO);
+    let clamped_bound_min = min_bound.max(Vector3::<i32>::ZERO);
     let clamped_bound_max = max_bound.min(tile_max_bound);
     let traversable = is_triangle_traversable(a, b, c, nav_mesh_settings);
     let vertices = [a, b, c];
@@ -301,15 +302,15 @@ fn process_triangle(
 }
 
 fn is_triangle_traversable(
-    a: Vec3A,
-    b: Vec3A,
-    c: Vec3A,
+    a: Vector3::<f32>,
+    b: Vector3::<f32>,
+    c: Vector3::<f32>,
     nav_mesh_settings: &NavMeshSettings,
 ) -> bool {
     let ab = b - a;
     let ac = c - a;
     let normal = ab.cross(ac).normalize();
-    let slope = normal.dot(Vec3A::Y).acos();
+    let slope = normal.dot(Vector3::<f32>::Y).acos();
 
     slope < nav_mesh_settings.max_traversable_slope_radians
 }
@@ -320,11 +321,11 @@ fn is_triangle_traversable(
 *   the right polygon's vertex count, and the right polygon's vertices.
 */
 fn divide_polygon(
-    vertices: &[Vec3A],
+    vertices: &[Vector3::<f32>],
     clip_line: f32,
     axis: usize,
     keep_left: bool
-) -> (usize, [Vec3A; 7]) {
+) -> (usize, [Vector3::<f32>; 7]) {
     let mut delta_from_line = [0.0; 7];
     // This loop determines which side of the line the vertex is on.
     for (i, vertex) in vertices.iter().enumerate() {
@@ -332,8 +333,8 @@ fn divide_polygon(
     }
 
     // TODO: We always use one of these options. Does it make sense to even return the other?
-    let mut polygon_left = [Vec3A::ZERO; 7];
-    let mut polygon_right = [Vec3A::ZERO; 7];
+    let mut polygon_left = [Vector3::<f32>::ZERO; 7];
+    let mut polygon_right = [Vector3::<f32>::ZERO; 7];
 
     let mut verts_left = 0;
     let mut verts_right = 0;

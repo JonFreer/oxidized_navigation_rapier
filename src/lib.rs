@@ -45,13 +45,13 @@
 
 use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
-
-use bevy::tasks::{AsyncComputeTaskPool, Task};
-use bevy::{
-    ecs::system::Resource,
-    prelude::*,
-    utils::{HashMap, HashSet},
-};
+use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3};
+// use bevy::tasks::{AsyncComputeTaskPool, Task};
+// use bevy::{
+//     ecs::system::Resource,
+//     prelude::*,
+//     utils::{HashMap, HashSet},
+// };
 use colliders::OxidizedCollider;
 use contour::build_contours;
 use conversion::{
@@ -62,9 +62,11 @@ use heightfields::{
     erode_walkable_area, HeightFieldCollection,
 };
 use mesher::build_poly_mesh;
+// use nalgebra::Vector2;
 use parry3d::math::Isometry;
-use parry3d::na::Vector3;
+// use parry3d::na::Vector3;
 use parry3d::shape::{HeightField, TypedShape};
+use parry3d::utils::hashmap::HashMap;
 use regions::build_regions;
 use smallvec::SmallVec;
 use tiles::{create_nav_mesh_tile_from_poly_mesh, NavMeshTiles, NavMeshTile};
@@ -81,7 +83,7 @@ mod regions;
 pub mod tiles;
 
 /// System sets containing the crate's systems.
-#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+#[derive( Debug, PartialEq, Eq, Hash, Clone)]
 pub enum OxidizedNavigation {
     /// Systems handling dirty marking when a NavMeshAffector component is removed.
     /// Separated to make sure that even if Main is throttled the removal events will be caught.
@@ -108,53 +110,56 @@ where
     }
 }
 
-impl<C> Plugin for OxidizedNavigationPlugin<C>
-where
-    C: OxidizedCollider,
-{
-    fn build(&self, app: &mut App) {
-        app.insert_resource(self.settings.clone());
 
-        app.init_resource::<TileAffectors>()
-            .init_resource::<DirtyTiles>()
-            .init_resource::<NavMesh>()
-            .init_resource::<GenerationTicker>()
-            .init_resource::<NavMeshAffectorRelations>()
-            .init_resource::<ActiveGenerationTasks>();
 
-        app.add_systems(
-            Update,
-            handle_removed_affectors_system
-                .before(send_tile_rebuild_tasks_system::<C>)
-                .in_set(OxidizedNavigation::RemovedComponent),
-        );
 
-        app.add_systems(
-            Update,
-            remove_finished_tasks
-                .in_set(OxidizedNavigation::Main)
-                .before(send_tile_rebuild_tasks_system::<C>),
-        );
+// impl<C> Plugin for OxidizedNavigationPlugin<C>
+// where
+//     C: OxidizedCollider,
+// {
+//     fn build(&self, app: &mut App) {
+//         app.insert_resource(self.settings.clone());
 
-        app.add_systems(
-            Update,
-            (
-                update_navmesh_affectors_system::<C>,
-                send_tile_rebuild_tasks_system::<C>.run_if(can_generate_new_tiles),
-            )
-                .chain()
-                .in_set(OxidizedNavigation::Main),
-        );
-    }
-}
+//         app.init_resource::<TileAffectors>()
+//             .init_resource::<DirtyTiles>()
+//             .init_resource::<NavMesh>()
+//             .init_resource::<GenerationTicker>()
+//             .init_resource::<NavMeshAffectorRelations>()
+//             .init_resource::<ActiveGenerationTasks>();
+
+//         app.add_systems(
+//             Update,
+//             handle_removed_affectors_system
+//                 .before(send_tile_rebuild_tasks_system::<C>)
+//                 .in_set(OxidizedNavigation::RemovedComponent),
+//         );
+
+//         app.add_systems(
+//             Update,
+//             remove_finished_tasks
+//                 .in_set(OxidizedNavigation::Main)
+//                 .before(send_tile_rebuild_tasks_system::<C>),
+//         );
+
+//         app.add_systems(
+//             Update,
+//             (
+//                 update_navmesh_affectors_system::<C>,
+//                 send_tile_rebuild_tasks_system::<C>.run_if(can_generate_new_tiles),
+//             )
+//                 .chain()
+//                 .in_set(OxidizedNavigation::Main),
+//         );
+//     }
+// }
 
 const FLAG_BORDER_VERTEX: u32 = 0x10000;
 const MASK_CONTOUR_REGION: u32 = 0xffff; // Masks out the above value.
 
-#[derive(Resource, Default)]
-struct NavMeshAffectorRelations(HashMap<Entity, SmallVec<[UVec2; 4]>>);
+#[derive(Default)]
+struct NavMeshAffectorRelations(HashMap<Entity, SmallVec<[Vector2<u32>; 4]>>);
 
-#[derive(Resource, Default)]
+#[derive( Default)]
 pub struct ActiveGenerationTasks(Vec<Task<()>>);
 impl ActiveGenerationTasks {
     pub fn len(&self) -> usize {
@@ -193,14 +198,14 @@ pub struct Area(pub u16);
 struct GenerationTicker(u64);
 
 #[derive(Default, Resource, Deref, DerefMut)]
-struct TileAffectors(HashMap<UVec2, HashSet<Entity>>);
+struct TileAffectors(HashMap<Vector2<u32>, HashSet<Entity>>);
 
 /// Set of all tiles that need to be rebuilt.
 #[derive(Default, Resource)]
-struct DirtyTiles(HashSet<UVec2>);
+struct DirtyTiles(HashSet<Vector2<u32>>);
 
 /// Settings for nav-mesh generation.
-#[derive(Resource, Clone)]
+#[derive(Clone)]
 pub struct NavMeshSettings {
     /// The horizontal resolution of the voxelized tile.
     ///
@@ -278,7 +283,7 @@ impl NavMeshSettings {
 
     /// Returns the tile coordinate that contains the supplied ``world_position``.
     #[inline]
-    pub fn get_tile_containing_position(&self, world_position: Vec2) -> UVec2 {
+    pub fn get_tile_containing_position(&self, world_position: Vector2<f32>) -> Vector2<u32> {
         let offset_world = world_position + self.world_half_extents;
 
         (offset_world / self.get_tile_size()).as_uvec2()
@@ -286,13 +291,13 @@ impl NavMeshSettings {
 
     /// Returns the minimum bound of a tile on the XZ-plane.
     #[inline]
-    pub fn get_tile_origin(&self, tile: UVec2) -> Vec2 {
+    pub fn get_tile_origin(&self, tile: Vector2<u32>) -> Vector2<f32> {
         tile.as_vec2() * self.get_tile_size() - self.world_half_extents
     }
 
     /// Returns the origin of a tile on the XZ-plane including the border area.
     #[inline]
-    pub fn get_tile_origin_with_border(&self, tile: UVec2) -> Vec2 {
+    pub fn get_tile_origin_with_border(&self, tile: Vector2<u32>) -> Vector2<f32> {
         self.get_tile_origin(tile) - self.get_border_size()
     }
 
@@ -308,7 +313,7 @@ impl NavMeshSettings {
 
     /// Returns the minimum & maximum bound of a tile on the XZ-plane.
     #[inline]
-    pub fn get_tile_bounds(&self, tile: UVec2) -> (Vec2, Vec2) {
+    pub fn get_tile_bounds(&self, tile: Vector2<u32>) -> (Vector2<f32>, Vector2<f32>) {
         let tile_size = self.get_tile_size();
 
         let min_bound = tile.as_vec2() * tile_size - self.world_half_extents;
@@ -321,7 +326,7 @@ impl NavMeshSettings {
 /// Wrapper around the nav-mesh data.
 ///
 /// The underlying [NavMeshTiles] must be retrieved using [NavMesh::get]
-#[derive(Default, Resource)]
+#[derive(Default)]
 pub struct NavMesh(Arc<RwLock<NavMeshTiles>>);
 
 impl NavMesh {
@@ -366,13 +371,13 @@ fn update_navmesh_affectors_system<C: OxidizedCollider>(
             ))
             .transform_by(&iso);
 
-        let min_vec = Vec2::new(
+        let min_vec = Vector2::<f32>::new(
             aabb.mins.x - border_expansion,
             aabb.mins.z - border_expansion,
         );
         let min_tile = nav_mesh_settings.get_tile_containing_position(min_vec);
 
-        let max_vec = Vec2::new(
+        let max_vec = Vector2::<f32>::new(
             aabb.maxs.x + border_expansion,
             aabb.maxs.z + border_expansion,
         );
@@ -403,7 +408,7 @@ fn update_navmesh_affectors_system<C: OxidizedCollider>(
 
         for x in min_tile.x..=max_tile.x {
             for y in min_tile.y..=max_tile.y {
-                let tile_coord = UVec2::new(x, y);
+                let tile_coord = Vector2::<f32>::new(x, y);
 
                 let affectors = if let Some(affectors) = tile_affectors.get_mut(&tile_coord) {
                     affectors
@@ -569,7 +574,7 @@ fn send_tile_rebuild_tasks_system<C: OxidizedCollider>(
                 }
                 // TODO: This one requires me to think.
                 TypedShape::Compound(_) => {
-                    warn!("Compound colliders are not yet supported for nav-mesh generation, skipping for now..");
+                    println!("Compound colliders are not yet supported for nav-mesh generation, skipping for now..");
                     continue;
                 }
                 // These ones do not make sense in this.
@@ -610,7 +615,7 @@ fn remove_finished_tasks(mut active_generation_tasks: ResMut<ActiveGenerationTas
 
 async fn remove_tile(
     generation: u64, // This is the max generation we remove. Should we somehow strangely be executing this after a new tile has arrived we won't remove it.
-    tile_coord: UVec2,
+    tile_coord: Vector2<u32>,
     nav_mesh: Arc<RwLock<NavMeshTiles>>,
 ) {
     let Ok(mut nav_mesh) = nav_mesh.write() else {
@@ -625,7 +630,7 @@ async fn remove_tile(
 }
 async fn build_tile(
     generation: u64,
-    tile_coord: UVec2,
+    tile_coord: Vector2<u32>,
     nav_mesh_settings: NavMeshSettings,
     geometry_collections: Vec<GeometryCollection>,
     heightfields: Vec<HeightFieldCollection>,
@@ -648,7 +653,7 @@ async fn build_tile(
     }
 }
 
-pub fn build_tile_sync(geometry_collections: Vec<GeometryCollection>, tile_coord: UVec2, heightfields: Vec<HeightFieldCollection>, nav_mesh_settings: &NavMeshSettings) -> NavMeshTile {
+pub fn build_tile_sync(geometry_collections: Vec<GeometryCollection>, tile_coord: Vector3<u32>, heightfields: Vec<HeightFieldCollection>, nav_mesh_settings: &NavMeshSettings) -> NavMeshTile {
     let triangle_collection = {
         #[cfg(feature = "trace")]
         let _span = info_span!("Convert Geometry Collections").entered();
@@ -725,7 +730,7 @@ fn get_neighbour_index(tile_size: usize, index: usize, dir: usize) -> usize {
     }
 }
 
-fn intersect_prop(a: IVec4, b: IVec4, c: IVec4, d: IVec4) -> bool {
+fn intersect_prop(a: Vector4<i32>, b: Vector4<i32>, c: Vector4<i32>, d: Vector4<i32>) -> bool {
     if collinear(a, b, c) || collinear(a, b, d) || collinear(c, d, a) || collinear(c, d, b) {
         return false;
     }
@@ -733,7 +738,7 @@ fn intersect_prop(a: IVec4, b: IVec4, c: IVec4, d: IVec4) -> bool {
     (left(a, b, c) ^ left(a, b, d)) && (left(c, d, a) ^ left(c, d, b))
 }
 
-fn between(a: IVec4, b: IVec4, c: IVec4) -> bool {
+fn between(a: Vector4<i32>, b: Vector4<i32>, c: Vector4<i32>) -> bool {
     if !collinear(a, b, c) {
         return false;
     }
@@ -745,7 +750,7 @@ fn between(a: IVec4, b: IVec4, c: IVec4) -> bool {
     (a.z <= c.z && c.z <= b.z) || (a.z >= c.z && c.z >= b.z)
 }
 
-fn intersect(a: IVec4, b: IVec4, c: IVec4, d: IVec4) -> bool {
+fn intersect(a: Vector4<i32>, b: Vector4<i32>, c: Vector4<i32>, d: Vector4<i32>) -> bool {
     intersect_prop(a, b, c, d)
         || between(a, b, c)
         || between(a, b, d)
@@ -753,22 +758,22 @@ fn intersect(a: IVec4, b: IVec4, c: IVec4, d: IVec4) -> bool {
         || between(c, d, b)
 }
 
-fn area_sqr(a: IVec4, b: IVec4, c: IVec4) -> i32 {
+fn area_sqr(a: Vector4<i32>, b: Vector4<i32>, c: Vector4<i32>) -> i32 {
     (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)
 }
 
-fn collinear(a: IVec4, b: IVec4, c: IVec4) -> bool {
+fn collinear(a: Vector4<i32>, b: Vector4<i32>, c: Vector4<i32>) -> bool {
     area_sqr(a, b, c) == 0
 }
 
-fn left(a: IVec4, b: IVec4, c: IVec4) -> bool {
+fn left(a: Vector4<i32>, b: Vector4<i32>, c: Vector4<i32>) -> bool {
     area_sqr(a, b, c) < 0
 }
-fn left_on(a: IVec4, b: IVec4, c: IVec4) -> bool {
+fn left_on(a: Vector4<i32>, b: Vector4<i32>, c: Vector4<i32>) -> bool {
     area_sqr(a, b, c) <= 0
 }
 
-fn in_cone(i: usize, outline_vertices: &[UVec4], point: UVec4) -> bool {
+fn in_cone(i: usize, outline_vertices: &[Vector4<u32>], point: Vector4<u32>) -> bool {
     let point_i = outline_vertices[i];
     let point_next = outline_vertices[(i + 1) % outline_vertices.len()];
     let point_previous =
