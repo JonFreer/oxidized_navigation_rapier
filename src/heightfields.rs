@@ -1,7 +1,9 @@
 use std::{cmp::Ordering, ops::Div, sync::Arc};
 
+use na::Similarity3;
 // use bevy::{prelude::*, math::Vec3A};
-use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3};
+use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3, convert};
+extern crate nalgebra as na;
 use parry3d::shape::HeightField;
 use smallvec::SmallVec;
 
@@ -54,13 +56,13 @@ pub struct OpenTile {
 }
 
 pub(super) struct TriangleCollection {
-    pub(super) transform: Transform3<f32>,
+    pub(super) transform: Similarity3<f32>,
     pub(super) triangles: Triangles,
     pub(super) area: Option<Area>,
 }
 
 pub struct HeightFieldCollection {
-    pub transform: Transform3<f32>,
+    pub transform: Similarity3<f32>,
     pub heightfield: Arc<HeightField>,
     pub area: Option<Area>,
 }
@@ -89,12 +91,13 @@ pub(super) fn build_heightfield_tile(
 
     for collection in triangle_collections.iter() {
         // TODO: This might be wrong for xpbd or custom parry3d colliders, but I can't figure out a nice way to know whether or not we're actually dealing with a rapier3d collider.
-        let transform = collection.transform.with_scale(Vector3::<f32>::ONE); // The collider returned from rapier already has scale applied to it, so we reset it here.
+        let mut transform = collection.transform.clone();
+        transform.set_scaling(1.0); // The collider returned from rapier already has scale applied to it, so we reset it here.
 
         match &collection.triangles {
             Triangles::Triangle(vertices) => {
                 let translated_vertices =
-                    vertices.map(|vertex| transform.transform_point(vertex) - tile_origin);
+                    vertices.map(|vertex| (transform.transform_vector(&vertex)) - tile_origin);
 
                 process_triangle(
                     Vector3::<f32>::from(translated_vertices[0]),
@@ -112,7 +115,7 @@ pub(super) fn build_heightfield_tile(
                 translated_vertices.extend(
                     vertices
                         .iter()
-                        .map(|vertex| transform.transform_point(*vertex) - tile_origin),
+                        .map(|vertex| transform.transform_vector(vertex) - tile_origin),
                 ); // Transform vertices.
 
                 for triangle in triangles.iter() {
@@ -137,14 +140,15 @@ pub(super) fn build_heightfield_tile(
 
     for collection in heightfields.iter() {
         // TODO: This might be wrong for xpbd or custom parry3d colliders, but I can't figure out a nice way to know whether or not we're actually dealing with a rapier3d collider.
-        let transform = collection.transform.with_scale(Vector3::<f32>::ONE); // The collider returned from rapier already has scale applied to it, so we reset it here.
+        let mut transform = collection.transform.clone(); //with_scale(Vector3::<f32>::new(1.0,1.0,1.0)); // The collider returned from rapier already has scale applied to it, so we reset it here.
+        transform.set_scaling(1.0);
 
         for triangle in collection.heightfield.triangles() {
-            let a = Vector3::<f32>::from(transform.transform_point(Vector3::<f32>::new(triangle.a.x, triangle.a.y, triangle.a.z))
+            let a = Vector3::<f32>::from(transform.transform_vector(&Vector3::<f32>::new(triangle.a.x, triangle.a.y, triangle.a.z))
                 - tile_origin);
-            let b = Vector3::<f32>::from(transform.transform_point(Vector3::<f32>::new(triangle.b.x, triangle.b.y, triangle.b.z))
+            let b = Vector3::<f32>::from(transform.transform_vector(&Vector3::<f32>::new(triangle.b.x, triangle.b.y, triangle.b.z))
                 - tile_origin);
-            let c = Vector3::<f32>::from(transform.transform_point(Vector3::<f32>::new(triangle.c.x, triangle.c.y, triangle.c.z))
+            let c = Vector3::<f32>::from(transform.transform_vector(&Vector3::<f32>::new(triangle.c.x, triangle.c.y, triangle.c.z))
                 - tile_origin);
 
             process_triangle(
@@ -168,14 +172,17 @@ fn process_triangle(
     b: Vector3<f32>,
     c: Vector3<f32>,
     nav_mesh_settings: &NavMeshSettings,
-    tile_max_bound: Vector3::<f32>,
+    tile_max_bound: Vector3::<i32>,
     tile_side: usize,
     voxel_cells: &mut [VoxelCell],
     area: Option<Area>,
 ) {
-    let min_bound = a.min(b).min(c).div(nav_mesh_settings.cell_width).as_ivec3();
-    let max_bound = a.max(b).max(c).div(nav_mesh_settings.cell_width).as_ivec3();
 
+    let min_bound = a.inf(&b).inf(&c).div(nav_mesh_settings.cell_width);
+    let min_bound = Vector3::<i32>::new(min_bound.x as i32, min_bound.y as i32, min_bound.z as i32);
+
+    let max_bound = a.sup(&b).sup(&c).div(nav_mesh_settings.cell_width);
+    let max_bound = Vector3::<i32>::new(max_bound.x as i32, max_bound.y as i32, max_bound.z as i32);
     // Check if triangle is completely outside the tile.
     if max_bound.x < 0
         || max_bound.z < 0
@@ -185,8 +192,8 @@ fn process_triangle(
         return;
     }
 
-    let clamped_bound_min = min_bound.max(Vector3::<i32>::ZERO);
-    let clamped_bound_max = max_bound.min(tile_max_bound);
+    let clamped_bound_min = min_bound.sup(&Vector3::<i32>::new(0,0,0));
+    let clamped_bound_max = max_bound.inf(&tile_max_bound);
     let traversable = is_triangle_traversable(a, b, c, nav_mesh_settings);
     let vertices = [a, b, c];
 
@@ -309,8 +316,8 @@ fn is_triangle_traversable(
 ) -> bool {
     let ab = b - a;
     let ac = c - a;
-    let normal = ab.cross(ac).normalize();
-    let slope = normal.dot(Vector3::<f32>::Y).acos();
+    let normal = ab.cross(&ac).normalize();
+    let slope = normal.dot(&Vector3::<f32>::new(0.0,1.0,0.0)).acos();
 
     slope < nav_mesh_settings.max_traversable_slope_radians
 }
@@ -333,8 +340,8 @@ fn divide_polygon(
     }
 
     // TODO: We always use one of these options. Does it make sense to even return the other?
-    let mut polygon_left = [Vector3::<f32>::ZERO; 7];
-    let mut polygon_right = [Vector3::<f32>::ZERO; 7];
+    let mut polygon_left = [Vector3::<f32>::new(0.0,0.0,0.0); 7];
+    let mut polygon_right = [Vector3::<f32>::new(0.0,0.0,0.0); 7];
 
     let mut verts_left = 0;
     let mut verts_right = 0;

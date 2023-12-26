@@ -2,7 +2,7 @@
 
 // use bevy::prelude::{UVec2, Vec3};
 
-use nalgebra::{Vector3, Vector2, Vector4};
+use nalgebra::{Vector3, Vector2, Vector4, distance_squared, Point3};
 
 use crate::{
     tiles::{Link, NavMeshTiles},
@@ -383,7 +383,7 @@ pub fn perform_string_pulling_on_path(
 
             // Right vertex.
             if triangle_area_2d(portal_apex, portal_right, right) <= 0.0 {
-                if portal_apex.distance_squared(portal_right) < (1.0 / 16384.0)
+                if distance_squared(&Point3::<f32>::from(portal_apex), &Point3::<f32>::from(portal_right))  < (1.0 / 16384.0)
                     || triangle_area_2d(portal_apex, portal_left, right) > 0.0
                 {
                     portal_right = right;
@@ -406,7 +406,7 @@ pub fn perform_string_pulling_on_path(
 
             // Left vertex.
             if triangle_area_2d(portal_apex, portal_left, left) >= 0.0 {
-                if portal_apex.distance_squared(portal_left) < (1.0 / 16384.0)
+                if distance_squared(&Point3::<f32>::from(portal_apex), &Point3::<f32>::from(portal_left))  < (1.0 / 16384.0)
                     || triangle_area_2d(portal_apex, portal_right, left) < 0.0
                 {
                     portal_left = left;

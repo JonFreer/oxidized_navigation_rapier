@@ -1,6 +1,6 @@
 // use bevy::{prelude::{Vector2<u32>, Vector3<u32>, Vector4<u32>}, log::info};
 
-use nalgebra::{Vector3, Vector2, Vector4};
+use nalgebra::{Vector3, Vector2, Vector4, convert};
 
 use crate::{contour::ContourSet, Area};
 
@@ -61,7 +61,7 @@ pub fn build_poly_mesh(contour_set: ContourSet, nav_mesh_settings: &NavMeshSetti
 
         for vertex in contour.vertices.iter() {
             let index = add_vertex(
-                vertex.truncate(),
+                Vector3::<u32>::new(vertex.x,vertex.y,vertex.z), //vertex.truncate(),
                 &mut poly_mesh.vertices,
                 &mut first_vertex,
                 &mut next_vertex,
@@ -135,10 +135,10 @@ pub enum EdgeConnectionDirection {
 impl EdgeConnectionDirection {
     pub fn offset(&self, coordinate: Vector2<u32>) -> Vector2<u32> {
         match self {
-            EdgeConnectionDirection::XNegative => coordinate - Vector2::<u32>::X,
-            EdgeConnectionDirection::ZPositive => coordinate + Vector2::<u32>::Y,
-            EdgeConnectionDirection::XPositive => coordinate + Vector2::<u32>::X,
-            EdgeConnectionDirection::ZNegative => coordinate - Vector2::<u32>::Y,
+            EdgeConnectionDirection::XNegative => coordinate - Vector2::<u32>::new(1,0),
+            EdgeConnectionDirection::ZPositive => coordinate + Vector2::<u32>::new(0,1),
+            EdgeConnectionDirection::XPositive => coordinate + Vector2::<u32>::new(1,0),
+            EdgeConnectionDirection::ZNegative => coordinate - Vector2::<u32>::new(0,1),
         }
     }
 }
@@ -369,30 +369,35 @@ fn in_cone(i: usize, j: usize, vertices: &[Vector4<u32>], indices: &[u32]) -> bo
     let point_i_prev =
         vertices[(indices[(indices.len() + i - 1) % indices.len()] & 0x0fffffff) as usize];
 
+    let point_i_prev : Vector4<i32> = convert(point_i_prev);
+    let point_i : Vector4<i32> = convert(point_i);
+    let point_i_next : Vector4<i32> = convert(point_i_next);
+    let point_j : Vector4<i32> = convert(point_j);
+
     if left_on(
-        point_i_prev.as_ivec4(),
-        point_i.as_ivec4(),
-        point_i_next.as_ivec4(),
+        point_i_prev,
+        point_i,
+        point_i_next,
     ) {
         return left(
-            point_i.as_ivec4(),
-            point_j.as_ivec4(),
-            point_i_prev.as_ivec4(),
+            point_i,
+            point_j,
+            point_i_prev,
         ) && left(
-            point_j.as_ivec4(),
-            point_i.as_ivec4(),
-            point_i_next.as_ivec4(),
+            point_j,
+            point_i,
+            point_i_next,
         );
     }
 
     !(left_on(
-        point_i.as_ivec4(),
-        point_j.as_ivec4(),
-        point_i_next.as_ivec4(),
+        point_i,
+        point_j,
+        point_i_next,
     ) && left_on(
-        point_j.as_ivec4(),
-        point_i.as_ivec4(),
-        point_i_prev.as_ivec4(),
+        point_j,
+        point_i,
+        point_i_prev,
     ))
 }
 
@@ -415,11 +420,16 @@ fn diagonalie(i: usize, j: usize, vertices: &[Vector4<u32>], indices: &[u32]) ->
                 continue;
             }
 
+            let diagonal_one : Vector4<i32> = convert(diagonal_one);
+            let diagonal_two : Vector4<i32> = convert(diagonal_two);
+            let point_one : Vector4<i32> = convert(point_one);
+            let point_two : Vector4<i32> = convert(point_two);
+
             if intersect(
-                diagonal_one.as_ivec4(),
-                diagonal_two.as_ivec4(),
-                point_one.as_ivec4(),
-                point_two.as_ivec4(),
+                diagonal_one,
+                diagonal_two,
+                point_one,
+                point_two,
             ) {
                 return false;
             }
@@ -440,31 +450,36 @@ fn in_cone_loose(a: usize, b: usize, vertices: &[Vector4<u32>], indices: &[u32])
     let point_a_prev =
         vertices[(indices[(indices.len() + a - 1) % indices.len()] & 0x0fffffff) as usize];
 
+    let point_a_prev : Vector4<i32> = convert(point_a_prev);
+    let point_a : Vector4<i32> = convert(point_a);
+    let point_a_next : Vector4<i32> = convert(point_a_next);
+    let point_b : Vector4<i32> = convert(point_b);
+
     if left_on(
-        point_a_prev.as_ivec4(),
-        point_a.as_ivec4(),
-        point_a_next.as_ivec4(),
+        point_a_prev,
+        point_a,
+        point_a_next,
     ) {
         // only difference between in_cone is this being left_on instead of left:
         return left_on(
-            point_a.as_ivec4(),
-            point_b.as_ivec4(),
-            point_a_prev.as_ivec4(),
+            point_a,
+            point_b,
+            point_a_prev,
         ) && left_on(
-            point_b.as_ivec4(),
-            point_a.as_ivec4(),
-            point_a_next.as_ivec4(),
+            point_b,
+            point_a,
+            point_a_next,
         );
     }
 
     !(left_on(
-        point_a.as_ivec4(),
-        point_b.as_ivec4(),
-        point_a_next.as_ivec4(),
+        point_a,
+        point_b,
+        point_a_next,
     ) && left_on(
-        point_b.as_ivec4(),
-        point_a.as_ivec4(),
-        point_a_prev.as_ivec4(),
+        point_b,
+        point_a,
+        point_a_prev,
     ))
 }
 
@@ -487,12 +502,17 @@ fn diagonalie_loose(a: usize, b: usize, vertices: &[Vector4<u32>], indices: &[u3
                 continue;
             }
 
+            let diagonal_a : Vector4<i32> = convert(diagonal_a);
+            let diagonal_b : Vector4<i32> = convert(diagonal_b);
+            let point_one : Vector4<i32> = convert(point_one);
+            let point_two : Vector4<i32> = convert(point_two);
+
             // loose uses prop instead of regular.
             if intersect_prop(
-                diagonal_a.as_ivec4(),
-                diagonal_b.as_ivec4(),
-                point_one.as_ivec4(),
-                point_two.as_ivec4(),
+                diagonal_a,
+                diagonal_b,
+                point_one,
+                point_two,
             ) {
                 return false;
             }

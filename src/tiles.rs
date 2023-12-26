@@ -4,7 +4,7 @@
 //     utils::HashMap,
 // };
 
-use nalgebra::{Vector3, Vector2, Vector4};
+use nalgebra::{Vector3, Vector2, Vector4, distance_squared, Point3, convert};
 
 use parry3d::utils::hashmap::HashMap;
 use smallvec::SmallVec;
@@ -256,8 +256,11 @@ impl NavMeshTiles {
         center: Vector3<f32>,
         half_extents: f32,
     ) -> Option<(Vector2<u32>, u16, Vector3<f32>)> {
-        let min = center - half_extents;
-        let max = center + half_extents;
+
+        let half_extents_vector = Vector3::<f32>::new(half_extents,half_extents,half_extents);
+
+        let min = center - half_extents_vector;
+        let max = center + half_extents_vector;
 
         let min_tile = nav_mesh_settings.get_tile_containing_position(min.xz());
         let max_tile = nav_mesh_settings.get_tile_containing_position(max.xz());
@@ -270,7 +273,8 @@ impl NavMeshTiles {
                 if let Some(tile) = self.tiles.get(&tile_coords) {
                     for (poly_i, polygon) in tile.polygons.iter().enumerate() {
                         let closest_point = tile.get_closest_point_in_polygon(polygon, center);
-                        let closest_distance = closest_point.distance_squared(center);
+                        // let center : Point3<f32> 
+                        let closest_distance = distance_squared(&Point3::<f32>::from(closest_point), &Point3::<f32>::from(center));// Point3::<f32>::from(closest_point).distance_squared(Point3::<f32>::from(center));
 
                         if closest_distance < out_distance {
                             out_distance = closest_distance;

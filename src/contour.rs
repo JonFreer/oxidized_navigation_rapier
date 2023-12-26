@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 // use bevy::{prelude::{IVec2, UVec2, UVec4}, log::warn};
-use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3};
+use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3, convert};
 
 use crate::{
     get_neighbour_index,
@@ -301,8 +301,8 @@ fn merge_contours(
 fn calc_area_of_polygon_2d(vertices: &[Vector4<u32>]) -> i32 {
     let mut area = 0;
     for i in 0..vertices.len() {
-        let previous = vertices[i].as_ivec4();
-        let next = vertices[(i + 1) % vertices.len()].as_ivec4();
+        let previous: Vector4<i32>  = convert(vertices[i]);
+        let next : Vector4<i32>  = convert(vertices[(i + 1) % vertices.len()]);
 
         area += next.x * previous.z - previous.x * next.z;
     }
@@ -333,11 +333,17 @@ fn intersect_segment_contour(
             continue;
         }
 
+        let point : Vector4<i32> = convert(point);
+        let corner : Vector4<i32> = convert(corner);
+        let point_i : Vector4<i32> = convert(point_i);
+        let point_next : Vector4<i32> = convert(point_next);
+
+
         if intersect(
-            point.as_ivec4(),
-            corner.as_ivec4(),
-            point_i.as_ivec4(),
-            point_next.as_ivec4(),
+            point,
+            corner,
+            point_i,
+            point_next,
         ) {
             return true;
         }
@@ -364,11 +370,16 @@ fn intersect_segment_contour_no_vertex(
             continue;
         }
 
+        let point : Vector4<i32> = convert(point);
+        let corner : Vector4<i32> = convert(corner);
+        let point_i : Vector4<i32> = convert(point_i);
+        let point_next : Vector4<i32> = convert(point_next);
+
         if intersect(
-            point.as_ivec4(),
-            corner.as_ivec4(),
-            point_i.as_ivec4(),
-            point_next.as_ivec4(),
+            point,
+            corner,
+            point_i,
+            point_next,
         ) {
             return true;
         }
@@ -609,11 +620,15 @@ fn simplify_contour(
         if (points[(c_i * 4 + 3) as usize] & MASK_CONTOUR_REGION) == 0 {
             // Checking if region is 0. We only tesellate unconnected edges.
             while c_i != end_i {
+
+                let point : Vector2<i32> = convert(Vector2::<u32>::new(points[(c_i * 4) as usize], points[(c_i * 4 + 2) as usize]));
+                let seg_a : Vector2<i32> = convert(Vector2::<u32>::new(a.x, a.z));
+                let seg_b : Vector2<i32> = convert(Vector2::<u32>::new(b.x, b.z));
+
                 let deviation = point_distance_from_segment(
-                    Vector2::<u32>::new(points[(c_i * 4) as usize], points[(c_i * 4 + 2) as usize])
-                        .as_ivec2(),
-                        Vector2::<u32>::new(a.x, a.z).as_ivec2(),
-                        Vector2::<u32>::new(b.x, b.z).as_ivec2(),
+                        point,
+                        seg_a,
+                        seg_b,
                 );
                 if deviation > max_deviation {
                     max_deviation = deviation;
@@ -698,8 +713,8 @@ fn simplify_contour(
 }
 
 fn point_distance_from_segment(point: Vector2<i32>, seg_a: Vector2<i32>, seg_b: Vector2<i32>) -> f32 {
-    let segment_delta = (seg_b - seg_a).as_vec2();
-    let point_delta = (point - seg_a).as_vec2();
+    let segment_delta : Vector2<f32> = convert(seg_b - seg_a);
+    let point_delta : Vector2<f32> =  convert(point - seg_a);
 
     let d = segment_delta.x * segment_delta.x + segment_delta.y * segment_delta.y;
     let mut t = segment_delta.x * point_delta.x + segment_delta.y * point_delta.y;

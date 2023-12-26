@@ -1,6 +1,6 @@
 // use bevy::prelude::{Transform, Vec3};
 
-use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3};
+use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3, Similarity3};
 
 use parry3d::{
     math::Real,
@@ -11,7 +11,7 @@ use parry3d::{
 use crate::{heightfields::TriangleCollection, Area};
 
 pub struct GeometryCollection {
-    pub transform: Transform3<f32>,
+    pub transform: Similarity3<f32>,
     pub geometry_to_convert: GeometryToConvert,
     pub area: Option<Area>,
 }
