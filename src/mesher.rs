@@ -1,8 +1,9 @@
 // use bevy::{prelude::{Vector2<u32>, Vector3<u32>, Vector4<u32>}, log::info};
 
 use nalgebra::{Vector3, Vector2, Vector4, convert};
-
+use serde::{Deserialize, Serialize};
 use crate::{contour::ContourSet, Area};
+use ts_rs::TS;
 
 use super::{intersect, intersect_prop, left, left_on, NavMeshSettings};
 
@@ -125,7 +126,7 @@ pub fn build_poly_mesh(contour_set: ContourSet, nav_mesh_settings: &NavMeshSetti
     poly_mesh
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq,  Serialize, Deserialize, TS)]
 pub enum EdgeConnectionDirection {
     XNegative,
     ZPositive,
@@ -143,7 +144,7 @@ impl EdgeConnectionDirection {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 pub enum EdgeConnection {
     None,
     Internal(u16),

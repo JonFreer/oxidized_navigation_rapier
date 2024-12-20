@@ -4,10 +4,13 @@
 //     utils::HashMap,
 // };
 
-use nalgebra::{Vector3, Vector2, Vector4, distance_squared, Point3, convert};
+use std::fmt::format;
 
+use nalgebra::{Vector3, Vector2, Vector4, distance_squared, Point3, convert};
+use serde::{Deserialize, Serialize, Serializer};
 use parry3d::utils::hashmap::HashMap;
 use smallvec::SmallVec;
+use ts_rs::TS;
 
 use crate::{
     mesher::{EdgeConnection, EdgeConnectionDirection, VERTICES_IN_TRIANGLE},
@@ -17,7 +20,7 @@ use crate::{
 use super::mesher::PolyMesh;
 
 /// Representation of a link between different polygons either internal to the tile or external (crossing over to another tile).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Link {
     Internal {
         /// Edge on self polygon.
@@ -40,9 +43,10 @@ pub enum Link {
 }
 
 /// A polygon within a nav-mesh tile.
-#[derive(Debug)]
+#[derive(Debug,Clone, Serialize, Deserialize,TS)]
 pub struct Polygon {
     pub indices: [u32; VERTICES_IN_TRIANGLE],
+    #[ts(type = "..")]
     pub links: SmallVec<[Link; VERTICES_IN_TRIANGLE]>, // This becomes a mess memory wise with a ton of different small objects around.
     pub area: Area,
 }
@@ -52,9 +56,13 @@ pub struct Polygon {
 */
 
 /// A single nav-mesh tile.
-#[derive(Debug)]
+/// 
+/// #[ts(export)]]
+#[ts(export)]
+#[derive(Debug,Clone, Serialize, Deserialize, TS)]
 pub struct NavMeshTile {
     /// Vertices in world space.
+    #[ts(type = "..")]
     pub vertices: Vec<Vector3<f32>>,
     pub polygons: Vec<Polygon>,
     pub edges: Vec<[EdgeConnection; VERTICES_IN_TRIANGLE]>,
@@ -75,10 +83,43 @@ impl NavMeshTile {
 /// Container for all nav-mesh tiles. Used for pathfinding queries.
 ///
 /// Call [crate::query::find_path] to run pathfinding algorithm.
-#[derive(Default)]
+#[derive(Default,Clone, Deserialize, TS)]
 pub struct NavMeshTiles {
+    #[ts(type = "any")]
     pub tiles: HashMap<Vector2<u32>, NavMeshTile>,
+    #[ts(type = "any")]
     pub tile_generations: HashMap<Vector2<u32>, u64>,
+}
+
+impl Serialize for NavMeshTiles {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {   
+
+        let mut new_tiles: HashMap<String, NavMeshTile> = HashMap::default();
+        // new_tiles.
+
+        // String s = String::new();
+        let string_list: Vec<String> = Vec::new();
+        // string_list.push("tiles")
+        
+
+        for (tile_vec,nav_mesh_tile) in &self.tiles{
+            // if let Ok(serial) = nav_mesh_tile.serialize(serializer){
+            //     string_list.push(format!("{}-{}:{}",tile_vec.x,tile_vec.y,));
+
+            // }
+            new_tiles.entry(format!("{}-{}",tile_vec.x,tile_vec.y)).or_insert(nav_mesh_tile.clone());
+
+        }
+        // serializer.
+    
+        // serializer.
+        new_tiles.serialize(serializer)
+
+        // let Hash
+    }
 }
 
 impl NavMeshTiles {

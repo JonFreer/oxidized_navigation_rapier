@@ -43,10 +43,12 @@
 //! [Bevy Rapier3D]: https://crates.io/crates/bevy_rapier3d
 //! [examples]: https://github.com/TheGrimsey/oxidized_navigation/blob/master/examples
 
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::collections::{HashSet};
 use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
-use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3};
+use nalgebra::{Vector3, Vector2, Vector4, Transform, Transform3, Similarity3};
 // use bevy::tasks::{AsyncComputeTaskPool, Task};
 // use bevy::{
 //     ecs::system::Resource,
@@ -223,9 +225,22 @@ impl OxidizedNavigationMain{
         
     }
 
-    
+    // Log the tiles to console
+    pub fn output(& self)->Option<NavMeshTiles>{
+        if let Ok(nav_mesh_tiles) =  self.nav_mesh.0.read(){
+            let tiles = nav_mesh_tiles.get_tiles();
+            for (x,y) in tiles{
+                println!("x:{:?} v:{:?}",x,y.polygons);
+            }
+            Some(nav_mesh_tiles.clone())
+        }else{
+            None
+        }
+    }
+
     pub fn send_tile_rebuild_tasks_system(
         &mut self,
+        collider_set: &ColliderSet,
         // mut active_generation_tasks: ResMut<ActiveGenerationTasks>,
         // mut generation_ticker: ResMut<GenerationTicker>,
         // mut dirty_tiles: ResMut<DirtyTiles>,
@@ -272,15 +287,19 @@ impl OxidizedNavigationMain{
             // Step 1: Gather data.
             let mut geometry_collections = Vec::with_capacity(affectors.len());
             // Storing heightfields separately because they are massive.
-            let mut heightfield_collections = Vec::new();
+            let mut heightfield_collections : Vec<HeightFieldCollection> = Vec::new();
 
             let mut collider_iter = affectors.iter();
 
             while let Some(collider_handle) = collider_iter.next()
                     // collider_iter.fetch_next()
-                {
-                    let area = nav_mesh_affector.map_or(Some(Area(0)), |area_type| area_type.0);
+                {   
 
+                    let collider = collider_set.get(*collider_handle).unwrap();
+
+                    // collider.
+                    // let area = nav_mesh_affector.map_or(Some(Area(0)), |area_type| area_type.0);
+                    let area = Some(Area(0));
                     let type_to_convert = match collider.oxidized_into_typed_shape() {
                         TypedShape::Ball(ball) => GeometryToConvert::Collider(ColliderType::Ball(*ball)),
                         TypedShape::Cuboid(cuboid) => {
@@ -295,21 +314,23 @@ impl OxidizedNavigationMain{
                         ),
                         TypedShape::HeightField(heightfield) => {
                             // Deduplicate heightfields.
-                            let heightfield = if let Some(heightfield) = heightfields.get(&entity) {
-                                heightfield.clone()
-                            } else {
-                                let heightfield = Arc::new(heightfield.clone());
+                            // let heightfield = if let Some(heightfield) = heightfields.get(&entity) {
+                            //     heightfield.clone()
+                            // } else {
+                            //     let heightfield = Arc::new(heightfield.clone());
 
-                                heightfields.insert(entity, heightfield.clone());
+                            //     heightfields.insert(entity, heightfield.clone());
 
-                                heightfield
-                            };
+                            //     heightfield
+                            // };
 
-                            heightfield_collections.push(HeightFieldCollection {
-                                transform: global_transform.compute_transform(),
-                                heightfield,
-                                area,
-                            });
+                            // heightfield_collections.push(HeightFieldCollection {
+                            //     transform: global_transform.compute_transform(),
+                            //     heightfield,
+                            //     area,
+                            // });
+
+                            println!("Cannot process trifields");
 
                             continue;
                         }
@@ -356,12 +377,23 @@ impl OxidizedNavigationMain{
                         TypedShape::Custom(_) => unimplemented!("Custom shapes are not yet supported for nav-mesh generation, skipping for now.."),
                     };
 
+                    let transform = Similarity3::from_parts(nalgebra::Translation::from(collider.translation().clone()),*collider.rotation(),1.0);
+
                     geometry_collections.push(GeometryCollection {
-                        transform: global_transform.compute_transform(),
+                        transform: transform,
                         geometry_to_convert: type_to_convert,
                         area,
                     });
                 }
+
+                build_tile(
+                            generation_ticker.0,
+                            tile_coord,
+                            self.settings.clone(),
+                            geometry_collections,
+                            heightfield_collections,
+                            &mut self.nav_mesh,
+                        );
         }
 
         // let thread_pool = AsyncComputeTaskPool::get();
@@ -373,137 +405,137 @@ impl OxidizedNavigationMain{
 
         // tiles_to_generate.extend(dirty_tiles.0.iter().take(max_task_count));
 
-        for tile_coord in tiles_to_generate.drain(..) {
-            dirty_tiles.0.remove(&tile_coord);
+        // for tile_coord in tiles_to_generate.drain(..) {
+        //     dirty_tiles.0.remove(&tile_coord);
 
-            generation_ticker.0 += 1;
+        //     generation_ticker.0 += 1;
 
-            let Some(affectors) = tile_affectors.get(&tile_coord) else {
-                // Spawn task to remove tile.
-                thread_pool.spawn(remove_tile(generation_ticker.0, tile_coord, nav_mesh.0.clone())).detach();
-                continue;
-            };
-            if affectors.is_empty() {
-                // Spawn task to remove tile.
-                thread_pool
-                    .spawn(remove_tile(
-                        generation_ticker.0,
-                        tile_coord,
-                        nav_mesh.0.clone(),
-                    ))
-                    .detach();
-                continue;
-            }
+        //     let Some(affectors) = tile_affectors.get(&tile_coord) else {
+        //         // Spawn task to remove tile.
+        //         thread_pool.spawn(remove_tile(generation_ticker.0, tile_coord, nav_mesh.0.clone())).detach();
+        //         continue;
+        //     };
+        //     if affectors.is_empty() {
+        //         // Spawn task to remove tile.
+        //         thread_pool
+        //             .spawn(remove_tile(
+        //                 generation_ticker.0,
+        //                 tile_coord,
+        //                 nav_mesh.0.clone(),
+        //             ))
+        //             .detach();
+        //         continue;
+        //     }
 
-            // Step 1: Gather data.
-            let mut geometry_collections = Vec::with_capacity(affectors.len());
-            // Storing heightfields separately because they are massive.
-            let mut heightfield_collections = Vec::new();
+        //     // Step 1: Gather data.
+        //     let mut geometry_collections = Vec::with_capacity(affectors.len());
+        //     // Storing heightfields separately because they are massive.
+        //     let mut heightfield_collections = Vec::new();
 
-            let mut collider_iter = collider_query.iter_many(affectors.iter());
-            while let Some((entity, collider, global_transform, nav_mesh_affector)) =
-                collider_iter.fetch_next()
-            {
-                let area = nav_mesh_affector.map_or(Some(Area(0)), |area_type| area_type.0);
+        //     let mut collider_iter = collider_query.iter_many(affectors.iter());
+        //     while let Some((entity, collider, global_transform, nav_mesh_affector)) =
+        //         collider_iter.fetch_next()
+        //     {
+        //         let area = nav_mesh_affector.map_or(Some(Area(0)), |area_type| area_type.0);
 
-                let type_to_convert = match collider.oxidized_into_typed_shape() {
-                    TypedShape::Ball(ball) => GeometryToConvert::Collider(ColliderType::Ball(*ball)),
-                    TypedShape::Cuboid(cuboid) => {
-                        GeometryToConvert::Collider(ColliderType::Cuboid(*cuboid))
-                    }
-                    TypedShape::Capsule(capsule) => {
-                        GeometryToConvert::Collider(ColliderType::Capsule(*capsule))
-                    }
-                    TypedShape::TriMesh(trimesh) => GeometryToConvert::ParryTriMesh(
-                        trimesh.vertices().to_vec(),
-                        trimesh.indices().to_vec(),
-                    ),
-                    TypedShape::HeightField(heightfield) => {
-                        // Deduplicate heightfields.
-                        let heightfield = if let Some(heightfield) = heightfields.get(&entity) {
-                            heightfield.clone()
-                        } else {
-                            let heightfield = Arc::new(heightfield.clone());
+        //         let type_to_convert = match collider.oxidized_into_typed_shape() {
+        //             TypedShape::Ball(ball) => GeometryToConvert::Collider(ColliderType::Ball(*ball)),
+        //             TypedShape::Cuboid(cuboid) => {
+        //                 GeometryToConvert::Collider(ColliderType::Cuboid(*cuboid))
+        //             }
+        //             TypedShape::Capsule(capsule) => {
+        //                 GeometryToConvert::Collider(ColliderType::Capsule(*capsule))
+        //             }
+        //             TypedShape::TriMesh(trimesh) => GeometryToConvert::ParryTriMesh(
+        //                 trimesh.vertices().to_vec(),
+        //                 trimesh.indices().to_vec(),
+        //             ),
+        //             TypedShape::HeightField(heightfield) => {
+        //                 // Deduplicate heightfields.
+        //                 let heightfield = if let Some(heightfield) = heightfields.get(&entity) {
+        //                     heightfield.clone()
+        //                 } else {
+        //                     let heightfield = Arc::new(heightfield.clone());
 
-                            heightfields.insert(entity, heightfield.clone());
+        //                     heightfields.insert(entity, heightfield.clone());
 
-                            heightfield
-                        };
+        //                     heightfield
+        //                 };
 
-                        heightfield_collections.push(HeightFieldCollection {
-                            transform: global_transform.compute_transform(),
-                            heightfield,
-                            area,
-                        });
+        //                 heightfield_collections.push(HeightFieldCollection {
+        //                     transform: global_transform.compute_transform(),
+        //                     heightfield,
+        //                     area,
+        //                 });
 
-                        continue;
-                    }
-                    TypedShape::ConvexPolyhedron(polyhedron) => {
-                        let tri = polyhedron.to_trimesh();
+        //                 continue;
+        //             }
+        //             TypedShape::ConvexPolyhedron(polyhedron) => {
+        //                 let tri = polyhedron.to_trimesh();
 
-                        GeometryToConvert::ParryTriMesh(tri.0, tri.1)
-                    }
-                    TypedShape::Cylinder(cylinder) => {
-                        GeometryToConvert::Collider(ColliderType::Cylinder(*cylinder))
-                    }
-                    TypedShape::Cone(cone) => {
-                        GeometryToConvert::Collider(ColliderType::Cone(*cone))
-                    }
-                    TypedShape::RoundCuboid(round_cuboid) => {
-                        GeometryToConvert::Collider(ColliderType::Cuboid(round_cuboid.inner_shape))
-                    }
-                    TypedShape::RoundCylinder(round_cylinder) => GeometryToConvert::Collider(
-                        ColliderType::Cylinder(round_cylinder.inner_shape),
-                    ),
-                    TypedShape::RoundCone(round_cone) => {
-                        GeometryToConvert::Collider(ColliderType::Cone(round_cone.inner_shape))
-                    }
-                    TypedShape::RoundConvexPolyhedron(round_polyhedron) => {
-                        let tri = round_polyhedron.inner_shape.to_trimesh();
+        //                 GeometryToConvert::ParryTriMesh(tri.0, tri.1)
+        //             }
+        //             TypedShape::Cylinder(cylinder) => {
+        //                 GeometryToConvert::Collider(ColliderType::Cylinder(*cylinder))
+        //             }
+        //             TypedShape::Cone(cone) => {
+        //                 GeometryToConvert::Collider(ColliderType::Cone(*cone))
+        //             }
+        //             TypedShape::RoundCuboid(round_cuboid) => {
+        //                 GeometryToConvert::Collider(ColliderType::Cuboid(round_cuboid.inner_shape))
+        //             }
+        //             TypedShape::RoundCylinder(round_cylinder) => GeometryToConvert::Collider(
+        //                 ColliderType::Cylinder(round_cylinder.inner_shape),
+        //             ),
+        //             TypedShape::RoundCone(round_cone) => {
+        //                 GeometryToConvert::Collider(ColliderType::Cone(round_cone.inner_shape))
+        //             }
+        //             TypedShape::RoundConvexPolyhedron(round_polyhedron) => {
+        //                 let tri = round_polyhedron.inner_shape.to_trimesh();
 
-                        GeometryToConvert::ParryTriMesh(tri.0, tri.1)
-                    }
-                    TypedShape::Triangle(triangle) => {
-                        GeometryToConvert::Collider(ColliderType::Triangle(*triangle))
-                    }
-                    TypedShape::RoundTriangle(triangle) => {
-                        GeometryToConvert::Collider(ColliderType::Triangle(triangle.inner_shape))
-                    }
-                    // TODO: This one requires me to think.
-                    TypedShape::Compound(_) => {
-                        println!("Compound colliders are not yet supported for nav-mesh generation, skipping for now..");
-                        continue;
-                    }
-                    // These ones do not make sense in this.
-                    TypedShape::HalfSpace(_) => continue, /* This is like an infinite plane? We don't care. */
-                    TypedShape::Polyline(_) => continue,  /* This is a line. */
-                    TypedShape::Segment(_) => continue,   /* This is a line segment. */
-                    TypedShape::Custom(_) => unimplemented!("Custom shapes are not yet supported for nav-mesh generation, skipping for now.."),
-                };
+        //                 GeometryToConvert::ParryTriMesh(tri.0, tri.1)
+        //             }
+        //             TypedShape::Triangle(triangle) => {
+        //                 GeometryToConvert::Collider(ColliderType::Triangle(*triangle))
+        //             }
+        //             TypedShape::RoundTriangle(triangle) => {
+        //                 GeometryToConvert::Collider(ColliderType::Triangle(triangle.inner_shape))
+        //             }
+        //             // TODO: This one requires me to think.
+        //             TypedShape::Compound(_) => {
+        //                 println!("Compound colliders are not yet supported for nav-mesh generation, skipping for now..");
+        //                 continue;
+        //             }
+        //             // These ones do not make sense in this.
+        //             TypedShape::HalfSpace(_) => continue, /* This is like an infinite plane? We don't care. */
+        //             TypedShape::Polyline(_) => continue,  /* This is a line. */
+        //             TypedShape::Segment(_) => continue,   /* This is a line segment. */
+        //             TypedShape::Custom(_) => unimplemented!("Custom shapes are not yet supported for nav-mesh generation, skipping for now.."),
+        //         };
 
-                geometry_collections.push(GeometryCollection {
-                    transform: global_transform.compute_transform(),
-                    geometry_to_convert: type_to_convert,
-                    area,
-                });
-            }
+        //         geometry_collections.push(GeometryCollection {
+        //             transform: global_transform.compute_transform(),
+        //             geometry_to_convert: type_to_convert,
+        //             area,
+        //         });
+        //     }
 
-            // Step 2: Acquire nav_mesh lock
-            let nav_mesh = nav_mesh.0.clone();
+        //     // Step 2: Acquire nav_mesh lock
+        //     let nav_mesh = nav_mesh.0.clone();
 
-            // Step 3: Make it a task.
-            let task = thread_pool.spawn(build_tile(
-                generation_ticker.0,
-                tile_coord,
-                nav_mesh_settings.clone(),
-                geometry_collections,
-                heightfield_collections,
-                nav_mesh,
-            ));
+        //     // Step 3: Make it a task.
+        //     let task = thread_pool.spawn(build_tile(
+        //         generation_ticker.0,
+        //         tile_coord,
+        //         nav_mesh_settings.clone(),
+        //         geometry_collections,
+        //         heightfield_collections,
+        //         nav_mesh,
+        //     ));
 
-            active_generation_tasks.0.push(task);
-        }
-        heightfields.clear();
+        //     active_generation_tasks.0.push(task);
+        // }
+        // heightfields.clear();
     }
 
    
@@ -597,7 +629,7 @@ pub struct NavMeshAffector;
 
 pub struct NavMeshAreaType(pub Option<Area>);
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,Deserialize, Serialize,TS)]
 pub struct Area(pub u16);
 
 /*
@@ -1041,20 +1073,22 @@ impl NavMesh {
 //     }
 // }
 
-async fn build_tile(
+fn build_tile(
     generation: u64,
     tile_coord: Vector2<u32>,
     nav_mesh_settings: NavMeshSettings,
     geometry_collections: Vec<GeometryCollection>,
     heightfields: Vec<HeightFieldCollection>,
-    nav_mesh: Arc<RwLock<NavMeshTiles>>,
+    nav_mesh: &mut NavMesh,
 ) {
+
+    println!("building tiles");
     #[cfg(feature = "trace")]
     let _span = info_span!("Async build Tile").entered();
 
     let nav_mesh_tile = build_tile_sync(geometry_collections, tile_coord, heightfields, &nav_mesh_settings);
 
-    let Ok(mut nav_mesh) = nav_mesh.write() else {
+    let Ok(mut nav_mesh) = nav_mesh.0.write() else {
         println!("Nav-Mesh lock has been poisoned. Generation can no longer be continued.");
         return;
     };
